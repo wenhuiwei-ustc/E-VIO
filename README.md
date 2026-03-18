@@ -1,5 +1,5 @@
 # E-VIO
-This repository is the official implementation of the papers **E-VIO**:
+This repository is the official implementation of the papers **E-VIO**: A Continual Evolving Visual-Inertial Odometry for Drones in Flight, which has been submitted to ISPRS Journal of Photogrammetry and Remote Sensing.
 
 # Setup
 ## Installation
