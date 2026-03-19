@@ -6,7 +6,7 @@ from timm.models.layers import DropPath
 import math
 import torch.cuda
 from depth_pose_prediction.networks.basic_modules import get_norm, get_act, ConvNormAct, ConvNorm2d, MSPatchEmb
-from depth_pose_prediction.networks.mambaout import GatedCNNBlock
+from depth_pose_prediction.networks.mambaout import GDConv
 from functools import partial
 
 class PositionalEncodingFourier(nn.Module):
@@ -231,11 +231,7 @@ class DilatedConv(nn.Module):
         return x
 
 
-class LGFI(nn.Module):
-    """
-    Local-Global Features Interaction
-    """
-
+class SEFormer(nn.Module):
     def __init__(self, dim, drop_path=0., layer_scale_init_value=1e-6, expan_ratio=6,
                  use_pos_emb=True, num_heads=6, qkv_bias=True, attn_drop=0., drop=0.):
         super().__init__()
@@ -260,13 +256,6 @@ class LGFI(nn.Module):
         self.gamma = nn.Parameter(layer_scale_init_value * torch.ones((self.dim)),
                                   requires_grad=True) if layer_scale_init_value > 0 else None
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-
-    def get_position_index(self):
-        coords = torch.arange(self.seq_len)  # T
-        relative_coords = coords[:, None] - coords[None, :]  # T, T
-        relative_coords += self.seq_len - 1  # shift to start from 0
-        relative_position_index = relative_coords  # T, T
-        return relative_position_index
 
     def forward(self, x):
         input_ = x
@@ -311,7 +300,7 @@ class AvgPool(nn.Module):
 
 class SECT(nn.Module):
     def __init__(self, in_chans=3, model='SECT', height=192, width=640,
-                 global_block=[1, 1, 1], global_block_type=['LGFI', 'LGFI', 'LGFI'],
+                 global_block=[1, 1, 1], global_block_type=['SEFormer', 'SEFormer', 'SEFormer'],
                  drop_path_rate=0.2, layer_scale_init_value=1e-6, expan_ratio=6,
                  heads=[8, 8, 8], use_pos_embd_xca=[True, False, False], **kwargs):
 
@@ -327,7 +316,7 @@ class SECT(nn.Module):
                 self.dilation = [[1, 2, 5], [1, 2, 5], [1, 2, 5, 2, 4, 10]]
 
         for g in global_block_type:
-            assert g in ['None', 'LGFI']
+            assert g in ['None', 'SEFormer']
 
         self.downsample_layers = nn.ModuleList()  # stem and 3 intermediate downsampling conv layers
         stem1 = nn.Sequential(
@@ -361,8 +350,8 @@ class SECT(nn.Module):
             stage_blocks = []
             for j in range(self.depth[i]):
                 if j > self.depth[i] - global_block[i] - 1:
-                    if global_block_type[i] == 'LGFI':
-                        stage_blocks.append(LGFI(dim=self.dims[i], drop_path=dp_rates[cur + j],
+                    if global_block_type[i] == 'SEFormer':
+                        stage_blocks.append(SEFormer(dim=self.dims[i], drop_path=dp_rates[cur + j],
                                                  expan_ratio=expan_ratio,
                                                  use_pos_emb=use_pos_embd_xca[i], num_heads=heads[i],
                                                  layer_scale_init_value=layer_scale_init_value,
@@ -370,7 +359,7 @@ class SECT(nn.Module):
                     else:
                         raise NotImplementedError
                 else:
-                    stage_blocks.append(GatedCNNBlock(dim=self.dims[i],
+                    stage_blocks.append(GDConv(dim=self.dims[i],
                                                  dilation=self.dilation[i][j], kernel_size=3, drop_path=dp_rates[cur + j],
                                                  ))
 
